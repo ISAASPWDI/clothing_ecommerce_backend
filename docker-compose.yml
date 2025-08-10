@@ -1,0 +1,29 @@
+services:
+  ecommerce_db:
+    image: mysql:lts
+    container_name: ecommerce_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE} 
+      MYSQL_USER: ${MYSQL_USER} 
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+volumes:
+  mysql_data:
+
+  # ecommerce-backend:
+  #   build: .
+  #   container_name: ecommerce_app
+  #   depends_on:
+  #     - mysql-db
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql-db:3306/${MYSQL_DATABASE}
+  #   volumes:
+  #     - .:/app
+  #     - /app/node_modules
