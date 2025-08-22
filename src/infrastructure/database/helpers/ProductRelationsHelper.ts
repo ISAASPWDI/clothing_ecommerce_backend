@@ -10,6 +10,7 @@ import { prisma } from '../prisma';
 // Definimos los tipos válidos para las relaciones y sus modelos asociados
 export type RelationType = 'category' | 'color' | 'age' | 'genre' | 'size' | 'detail' | 'image';
 
+export type SortByOptions = 'newest' | 'price_asc' | 'price_desc';
 export interface RelationMapping {
   model: string;
   foreignKey: string;

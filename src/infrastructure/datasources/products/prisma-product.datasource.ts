@@ -2,7 +2,7 @@ import { ProductDataSource } from "../../../domain/datasources/products/product.
 import { ProductDTO } from "../../../application/dtos/products/ProductDTO";
 import { Product, ProductOptions } from "../../../domain/entities/products/product.entity";
 import { prisma } from "../../database/prisma";
-import { ProductRelationsHelper, ProductRelationsOptions, RELATION_CONFIGS, RELATION_MAPPINGS, RelationType } from "../../database/helpers/ProductRelationsHelper";
+import { ProductRelationsHelper, ProductRelationsOptions, RELATION_CONFIGS, RELATION_MAPPINGS, RelationType, SortByOptions } from "../../database/helpers/ProductRelationsHelper";
 import { ProductResponseDTO } from "../../../application/dtos/responses/products/ProductResponseDTO";
 
 export class PrismaProductDataSource implements ProductDataSource {
@@ -255,7 +255,11 @@ async findAll(relation: RelationType, relationId?: number): Promise<any[]> {
 
 async findProductsByRelation(
   filterData: { key: string; ids: number[] }[],
-  page: number = 1
+  page: number = 1,
+  maxPrice?: number,
+  minPrice?: number,
+  sortBy?: SortByOptions,
+  searchTerm?: string
 ): Promise<{ products: Product[]; isProducts: boolean }> {
   const filterObject: { [key: string]: number[] } = {};
   const validateKeys: string[] = [];
@@ -268,9 +272,11 @@ async findProductsByRelation(
   }
 
   const isValidated = await this.productRelationsHelper.validateForeignKeys(validateKeys);
-  if (!isValidated) throw new Error(`Ninguna clave es válida`);
+  if (!isValidated && !filterObject) throw new Error(`Ninguna clave es válida`);
 
   const whereFilters: Record<string, any> = {};
+  
+  // Filtros de relaciones existentes
   for (const key in filterObject) {
     const mappingEntry = Object.entries(RELATION_MAPPINGS).find(
       ([, val]) => val.foreignKey === key
@@ -284,9 +290,29 @@ async findProductsByRelation(
     };
   }
 
+  // Filtro de precio
+  if (maxPrice || minPrice) {
+    whereFilters.price = {};
+    if (maxPrice) whereFilters.price.lte = maxPrice;
+    if (minPrice) whereFilters.price.gte = minPrice;
+  }
+
+  // Filtro de búsqueda
+  if (searchTerm) {
+    whereFilters.OR = [
+      { name: { contains: searchTerm} },
+      { description: { contains: searchTerm } }
+    ];
+  }
+
   if (Object.keys(whereFilters).length === 0) {
     throw new Error('No se pudo construir ningún filtro válido');
   }
+
+  // Configurar ordenamiento
+  let orderBy: any = { id: 'desc' }; // Por defecto newest
+  if (sortBy === 'price_asc') orderBy = { price: 'asc' };
+  if (sortBy === 'price_desc') orderBy = { price: 'desc' };
 
   const take = 32;
   const skip = (page - 1) * take;
@@ -298,6 +324,7 @@ async findProductsByRelation(
     where: whereFilters,
     skip,
     take,
+    orderBy
   });
 
   const products = result.map(product => new Product({
@@ -318,7 +345,6 @@ async findProductsByRelation(
     isProducts: skip + take < totalCount,
   };
 }
-
 
 
 

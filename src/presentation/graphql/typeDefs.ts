@@ -174,7 +174,12 @@ export const typeDefs = gql`
       password: String
     ): User
     getUserByEmail(email: String!): User
-    
+    # SIZES
+    getAllSizes: [Size]
+    # AGES
+    getAllAges: [Age]
+    # COLORS
+    getAllColors: [Color]
     # CATEGORIAS
     getAllCategories: [Category]
     # GENRES
@@ -184,6 +189,10 @@ export const typeDefs = gql`
     findProductsByRelation(
       filterData: [FilterDataInput!]!, 
       page: Int
+      maxPrice: Float
+      minPrice: Float
+      sortBy: String
+      searchTerm: String
     ): ProductsWithPagination!
 
   }
