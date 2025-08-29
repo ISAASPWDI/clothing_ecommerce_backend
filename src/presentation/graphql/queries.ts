@@ -3,6 +3,8 @@ import { AuthenticateUser } from "../../application/use-cases/auth/authenticate-
 import { GetAllAgesUseCase } from "../../application/use-cases/products/ages/get-all-ages.use-case";
 import { GetAllCategoriesUseCase } from "../../application/use-cases/products/categories/get-all-categories.use-case";
 import { GetAllColorsUseCase } from "../../application/use-cases/products/colors/get-all-colors.use-case";
+import { GetProductsBySlugUseCase } from "../../application/use-cases/products/find-product-by-slug.use-case";
+import { GetRelatedProductsUseCase } from "../../application/use-cases/products/find-related-products.use-case";
 import { GetAllGenresUseCase } from "../../application/use-cases/products/genres/get-all-genres.use-case";
 import { GetProductsByRelationUseCase } from "../../application/use-cases/products/get-product-by-relation.use-case";
 import { GetProductsUseCase } from "../../application/use-cases/products/get-product.use-case";
@@ -60,7 +62,8 @@ const getAllGenresUseCase = new GetAllGenresUseCase(prismaGenreRepository)
 const getAllSizesUseCase = new GetAllSizesUseCase(prismaSizeRepository)
 const getProductsUseCase = new GetProductsUseCase(prismaProductRepository)
 const getProductsByRelationUseCase = new GetProductsByRelationUseCase(prismaProductRepository)
-
+const getProductBySlugUseCase = new GetProductsBySlugUseCase(prismaProductRepository)
+const getRelatedProductsUseCase = new GetRelatedProductsUseCase(prismaProductRepository)
 interface LoginOptions {
   email: string;
   password?: string;
@@ -80,6 +83,10 @@ interface FindProductsByRelation {
   sortBy?: SortByOptions,
   searchTerm?: string
 }
+interface RelatedProducts {
+  productId: number,
+  limit: number
+}
 export const queries = {
   //USER
   findUserByEmail: async (_: unknown, args: LoginOptions) => {
@@ -98,8 +105,30 @@ export const queries = {
   },
 
   findProductsByRelation: async (_: unknown, args: FindProductsByRelation) => {
-    await new Promise((res) => setTimeout(res, 4000));
-    return await getProductsByRelationUseCase.execute(args.filterData, args.page, args.minPrice, args.maxPrice,args.sortBy, args.searchTerm)
+    // await new Promise((res) => setTimeout(res, 4000));
+    return await getProductsByRelationUseCase.execute(args.filterData, args.page, args.minPrice, args.maxPrice, args.sortBy, args.searchTerm)
+  },
+
+  getProduct: async (_: unknown, { identifier }: { identifier: string | number }) => {
+    console.log("📍 Resolver recibió identifier:", identifier);
+    try {
+      const result = await getProductBySlugUseCase.execute(identifier);
+      console.log("✅ Producto encontrado:", result ? "Sí" : "No");
+      return result;
+    } catch (error) {
+      console.error("❌ Error en resolver:", error);
+      throw error;
+    }
+  },
+  getRelatedProducts: async (_: unknown, args: RelatedProducts) => {
+    return await getRelatedProductsUseCase.execute(args.productId, args.limit)
+    // try {
+    //   const products = await productService.findRelatedProducts(productId, limit);
+    //   return products;
+    // } catch (error) {
+    //   console.error('Error fetching related products:', error);
+    //   return [];
+    // }
   },
   //COLOR
   getAllColors: async (_: unknown) => {

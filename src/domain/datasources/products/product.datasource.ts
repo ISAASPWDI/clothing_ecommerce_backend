@@ -1,5 +1,5 @@
 import { ProductRelationsOptions, RelationType, SortByOptions } from "../../../infrastructure/database/helpers/ProductRelationsHelper";
-import { Product } from "../../entities/products/product.entity";
+import { Product, ProductOptions } from "../../entities/products/product.entity";
 
 export abstract class ProductDataSource {
     //Metodos para productos
@@ -15,6 +15,11 @@ export abstract class ProductDataSource {
         sortBy?: SortByOptions,
         searchTerm?: string
     ): Promise<{ products: Product[]; isProducts: boolean }>;
+    abstract findProductBySlugOrId(identifier: string | number): Promise<ProductOptions | null>
+        abstract findRelatedProducts(
+            productId: number,
+            limit: number
+        ): Promise<Product[]>
     // abstract findByColor(colorId: string): Promise<Product[]>;
     // abstract findByAge(ageId: string): Promise<Product[]>;
     // abstract updateStock(id: string, quantity: number): Promise<Product>;

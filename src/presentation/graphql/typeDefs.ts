@@ -194,7 +194,9 @@ export const typeDefs = gql`
       sortBy: String
       searchTerm: String
     ): ProductsWithPagination!
-
+    getProduct(identifier: String!): ProductResponse
+    getRelatedProducts(productId: Int!, limit: Int = 4): [Product!]!
+    
   }
   
   # MUTATIONS

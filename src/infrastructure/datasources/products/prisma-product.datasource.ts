@@ -4,6 +4,13 @@ import { Product, ProductOptions } from "../../../domain/entities/products/produ
 import { prisma } from "../../database/prisma";
 import { ProductRelationsHelper, ProductRelationsOptions, RELATION_CONFIGS, RELATION_MAPPINGS, RelationType, SortByOptions } from "../../database/helpers/ProductRelationsHelper";
 import { ProductResponseDTO } from "../../../application/dtos/responses/products/ProductResponseDTO";
+import { Color } from "../../../domain/entities/products/color.entity";
+import { Size } from "../../../domain/entities/products/size.entity";
+import { Category } from "../../../domain/entities/products/category.entity";
+import { Genre } from "../../../domain/entities/products/gender.entity";
+import { Age } from "../../../domain/entities/products/age.entity";
+import { Detail } from "../../../domain/entities/products/detail.entity";
+import { Image } from "../../../domain/entities/products/image.entity";
 
 export class PrismaProductDataSource implements ProductDataSource {
 
@@ -347,9 +354,210 @@ async findProductsByRelation(
 }
 
 
+async findProductBySlugOrId(identifier: string | number): Promise<ProductOptions | null> {
+  console.log("🔍 findProductBySlugOrId llamada con:", typeof identifier, identifier);
+  
+  const isNumeric = !isNaN(Number(identifier));
+  console.log("🔢 Es numérico:", isNumeric);
+  
+  const whereClause = isNumeric 
+    ? { id: Number(identifier) }
+    : { slug: String(identifier) };
+    
+  console.log("📋 Where clause:", JSON.stringify(whereClause, null, 2));
+
+  try {
+    const productData = await prisma.product.findFirst({
+      where: whereClause,
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        // Solo selecciona campos básicos primero para debug
+      }
+    });
+
+    console.log("💾 Resultado de Prisma:", productData);
+    
+    if (!productData) {
+      // Verificar si existe algún producto con slug similar
+      const similarProducts = await prisma.product.findMany({
+        where: {
+          slug: {
+            contains: String(identifier)
+          }
+        },
+        select: {
+          id: true,
+          name: true,
+          slug: true
+        },
+        take: 5
+      });
+      
+      console.log("🔍 Productos similares encontrados:", similarProducts);
+      return null;
+    }
+
+    // Si encontramos el producto, hacer la query completa
+    const fullProductData = await prisma.product.findFirst({
+      where: whereClause,
+      include: {
+        // Colores del producto
+        productColors: {
+          include: {
+            color: true
+          }
+        },
+        // Tallas del producto
+        productSizes: {
+          include: {
+            size: true
+          }
+        },
+        // Categorías del producto
+        productCategories: {
+          include: {
+            category: true
+          }
+        },
+        // Géneros del producto
+        productGenres: {
+          include: {
+            genre: true
+          }
+        },
+        // Edades del producto
+        productAges: {
+          include: {
+            age: true
+          }
+        },
+        // Detalles adicionales del producto
+        productDetails: true,
+        // Imágenes del producto
+        productImages: {
+          orderBy: [
+            { isMain: 'desc' }, // Imagen principal primero
+            { sortOrder: 'asc' }
+          ]
+        }
+      }
+    });
+
+    if (!fullProductData) return null;
+
+    // Mapear los datos a un formato más limpio
+    const product: ProductOptions = {
+      id: fullProductData.id,
+      name: fullProductData.name,
+      slug: fullProductData.slug,
+      price: fullProductData.price.toNumber(),
+      description: fullProductData.description ?? undefined,
+      quantity: fullProductData.quantity,
+      reviewCount: fullProductData.reviewCount,
+      metaTitle: fullProductData.metaTitle ?? undefined,
+      metaDescription: fullProductData.metaDescription ?? undefined,
+      metaKeywords: fullProductData.metaKeywords ?? undefined,
+      
+      // Colores disponibles
+      colors: fullProductData.productColors.map(pc => new Color({
+        id: pc.color.id,
+        color: pc.color.color
+      })),
+      
+      // Tallas disponibles
+      sizes: fullProductData.productSizes.map(ps => new Size({
+        id: ps.size.id,
+        size: ps.size.size
+      })),
+      
+      // Categorías
+      categories: fullProductData.productCategories.map(pc => new Category({
+        id: pc.category.id,
+        name: pc.category.name,
+        slug: pc.category.slug
+      })),
+      
+      // Géneros
+      genres: fullProductData.productGenres.map(pg => new Genre({
+        id: pg.genre.id,
+        genre: pg.genre.genre
+      })),
+      
+      // Edades recomendadas
+      ages: fullProductData.productAges.map(pa => new Age({
+        id: pa.age.id,
+        range: pa.age.range
+      })),
+      
+      // Detalles adicionales (especificaciones)
+      details: fullProductData.productDetails.map(pd => new Detail({
+        id: pd.id,
+        key: pd.key,
+        value: pd.value
+      })),
+      
+      // Imágenes del producto
+      images: fullProductData.productImages.map(pi => new Image({
+        id: pi.id,
+        imagePath: pi.imagePath,
+        alt: pi.alt,
+        isMain: pi.isMain,
+        sortOrder: pi.sortOrder
+      }))
+    };
+
+    return product;
+  } catch (error) {
+    console.error("❌ Error en Prisma query:", error);
+    throw error;
+  }
+}
 
 
 
+async findRelatedProducts(
+  productId: number, 
+  limit: number = 4
+): Promise<Product[]> {
+  // Primero obtenemos las categorías del producto actual
+  const currentProductCategories = await prisma.productCategory.findMany({
+    where: { productId },
+    select: { categoryId: true }
+  });
+
+  const categoryIds = currentProductCategories.map(pc => pc.categoryId);
+
+  if (categoryIds.length === 0) return [];
+
+  // Buscamos productos que compartan al menos una categoría
+  const relatedProducts = await prisma.product.findMany({
+    where: {
+      id: { not: productId }, // Excluir el producto actual
+      productCategories: {
+        some: {
+          categoryId: { in: categoryIds }
+        }
+      }
+    },
+    take: limit,
+    orderBy: { reviewCount: 'desc' } // Ordenar por popularidad
+  });
+
+  return relatedProducts.map(product => new Product({
+    id: product.id,
+    name: product.name,
+    slug: product.slug,
+    price: product.price.toNumber(),
+    description: product.description ?? undefined,
+    quantity: product.quantity,
+    reviewCount: product.reviewCount,
+    metaTitle: product.metaTitle ?? undefined,
+    metaDescription: product.metaDescription ?? undefined,
+    metaKeywords: product.metaKeywords ?? undefined,
+  }));
+}
 
 
 
