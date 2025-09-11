@@ -94,12 +94,7 @@ npm run dev
 ```
 
 ### Environment Variables
-```env
-DATABASE_URL="mysql://username:password@localhost:3306/ecommerce"
-JWT_SECRET="your-jwt-secret"
-MERCADOPAGO_ACCESS_TOKEN="your-mercadopago-token"
-NEXT_PUBLIC_API_URL="http://localhost:3000/api"
-```
+- Check .env.example file
 
 ## 📱 Screenshots & Demo
 
@@ -187,10 +182,10 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 
 ## 📞 Contact
 
-**Developer**: [Your Name]
-- 💼 LinkedIn: [Your LinkedIn Profile]
-- 📧 Email: your.email@example.com
-- 🐙 GitHub: [@yourusername](https://github.com/yourusername)
+**Developer**: Stevens
+- 💼 LinkedIn: https://www.linkedin.com/in/stevens-aliaga-arauco-05bb39226
+- 📧 Email: stivensaliaga@gmail.com
+- 🐙 GitHub: [@ISAASPWDI](https://github.com/ISAASPWDI)
 
 ---
 
