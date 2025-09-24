@@ -1,4 +1,6 @@
+import { GraphQLError } from "graphql";
 import { CategoryResponseDTO } from "../../application/dtos/responses/categories/CategoryResponseDTO";
+import { AddressResponseDTO } from "../../application/dtos/responses/users/addresses/address-response.dto";
 import { AuthenticateUser } from "../../application/use-cases/auth/authenticate-user.use-case";
 import { GetAllAgesUseCase } from "../../application/use-cases/products/ages/get-all-ages.use-case";
 import { GetAllCategoriesUseCase } from "../../application/use-cases/products/categories/get-all-categories.use-case";
@@ -9,6 +11,8 @@ import { GetAllGenresUseCase } from "../../application/use-cases/products/genres
 import { GetProductsByRelationUseCase } from "../../application/use-cases/products/get-product-by-relation.use-case";
 import { GetProductsUseCase } from "../../application/use-cases/products/get-product.use-case";
 import { GetAllSizesUseCase } from "../../application/use-cases/products/sizes/get-all-sizes.use-case";
+import { GetAddressByIdUseCase } from "../../application/use-cases/users/addresses/get-address-by-id.use-case";
+import { GetAddressesUseCase } from "../../application/use-cases/users/addresses/get-addresses.use-case";
 import { GetUser } from "../../application/use-cases/users/get-user.use-case";
 import { LoginUser } from "../../application/use-cases/users/login-user.use-case";
 import { BcryptAdapter } from "../../infrastructure/adapters/bcrypt.adapter";
@@ -19,6 +23,7 @@ import { PrismaColorDataSource } from "../../infrastructure/datasources/products
 import { PrismaGenreDataSource } from "../../infrastructure/datasources/products/prisma-genre.datasource";
 import { PrismaProductDataSource } from "../../infrastructure/datasources/products/prisma-product.datasource";
 import { PrismaSizeDataSource } from "../../infrastructure/datasources/products/prisma-size.datasource";
+import { PrismaAddressDataSource } from "../../infrastructure/datasources/users/addresses/prisma-address.datasource";
 import { PrismaUserDataSource } from "../../infrastructure/datasources/users/prisma-user.datasource";
 import { AgeRepositoryImpl } from "../../infrastructure/repository/products/age.repository.implement";
 import { CategoryRepositoryImpl } from "../../infrastructure/repository/products/category.repository.implement";
@@ -26,6 +31,7 @@ import { ColorRepositoryImpl } from "../../infrastructure/repository/products/co
 import { GenreRepositoryImpl } from "../../infrastructure/repository/products/genre.repository.implement";
 import { ProductRepositoryImpl } from "../../infrastructure/repository/products/product.repository.implement";
 import { SizeRepositoryImpl } from "../../infrastructure/repository/products/size.repository.implement";
+import { AddressRepositoryImpl } from "../../infrastructure/repository/users/addresses/address-repository.implement";
 import { UserRepositoryImpl } from "../../infrastructure/repository/users/user.repository.implement";
 
 
@@ -51,6 +57,10 @@ const prismaSizeRepository = new SizeRepositoryImpl(
 const prismaProductRepository = new ProductRepositoryImpl(
   new PrismaProductDataSource()
 )
+
+const addressRepository = new AddressRepositoryImpl(
+  new PrismaAddressDataSource()
+)
 const bcryptAdapter = new BcryptAdapter();
 const loginUser = new LoginUser(prismaUserRepository, bcryptAdapter);
 const authenticateUser = new AuthenticateUser(loginUser);
@@ -64,6 +74,10 @@ const getProductsUseCase = new GetProductsUseCase(prismaProductRepository)
 const getProductsByRelationUseCase = new GetProductsByRelationUseCase(prismaProductRepository)
 const getProductBySlugUseCase = new GetProductsBySlugUseCase(prismaProductRepository)
 const getRelatedProductsUseCase = new GetRelatedProductsUseCase(prismaProductRepository)
+
+const getAddressesUseCase = new GetAddressesUseCase(addressRepository);
+const getAddressByIdUseCase = new GetAddressByIdUseCase(addressRepository);
+
 interface LoginOptions {
   email: string;
   password?: string;
@@ -86,6 +100,13 @@ interface FindProductsByRelation {
 interface RelatedProducts {
   productId: number,
   limit: number
+}
+
+interface GetAddressByIdArgs {
+  id: number;
+}
+interface GetAddressesByUserArgs {
+    userId: number;
 }
 export const queries = {
   //USER
@@ -153,5 +174,56 @@ export const queries = {
   //SIZE
   getAllSizes: async (_: unknown) => {
     return await getAllSizesUseCase.execute() ?? [];
-  }
+  },
+
+  //ADDRESSES
+  getAddresses: async () => {
+    try {
+      const addresses = await getAddressesUseCase.execute();
+      if (!addresses) return [];
+
+      return addresses.map(address => new AddressResponseDTO(address));
+    } catch (error: any) {
+      console.error("Error en getAddresses:", error);
+      throw new GraphQLError("Error al obtener las direcciones.", {
+        extensions: { code: "INTERNAL_SERVER_ERROR" },
+      });
+    }
+  },
+          getAddressesByUser: async (_: unknown, args: GetAddressesByUserArgs) => {
+            try {
+                const addresses = await getAddressesUseCase.execute();
+                if (!addresses) return [];
+                
+                // Filtrar por userId
+                const userAddresses = addresses.filter(address => address.userId === args.userId);
+                return userAddresses.map(address => new AddressResponseDTO(address));
+            } catch (error: any) {
+                console.error("Error en getAddressesByUser:", error);
+                throw new GraphQLError("Error al obtener las direcciones del usuario.", {
+                    extensions: { code: "INTERNAL_SERVER_ERROR" },
+                });
+            }
+        },
+
+  // Obtener dirección por ID
+  getAddressById: async (_: unknown, args: GetAddressByIdArgs) => {
+    try {
+      const address = await getAddressByIdUseCase.execute(args.id);
+      if (!address) {
+        throw new GraphQLError("Dirección no encontrada.", {
+          extensions: { code: "NOT_FOUND" },
+        });
+      }
+
+      return new AddressResponseDTO(address);
+    } catch (error: any) {
+      console.error("Error en getAddressById:", error);
+      if (error instanceof GraphQLError) throw error;
+
+      throw new GraphQLError("Error al obtener la dirección.", {
+        extensions: { code: "INTERNAL_SERVER_ERROR" },
+      });
+    }
+  },
 };

@@ -91,7 +91,17 @@ export const typeDefs = gql`
     products: [Product!]!
     isProducts: Boolean!
   }
-
+type Address {
+  id: Int!
+  userId: String!
+  firstName: String!
+  lastName: String!
+  address: String!
+  optAddress: String
+  city: String!
+  zipCode: String!
+  phone: String!
+}
 
   # INPUTS DE USUARIOS
 
@@ -120,7 +130,27 @@ export const typeDefs = gql`
     emailVerified: String
     image: String
   }
-
+  #INPUTS DE ADDRESS
+input AddressInput {
+  userId: String!
+  firstName: String!
+  lastName: String!
+  address: String!
+  optAddress: String
+  city: String!
+  zipCode: String!
+  phone: String!
+}
+  input UpdateAddressInput {
+    userId: String!
+  firstName: String!
+  lastName: String!
+  address: String!
+  optAddress: String
+  city: String!
+  zipCode: String!
+  phone: String!
+}
   #INPUTS DE CATEGORIAS
 
   input CreateCategoryInput {
@@ -196,7 +226,10 @@ export const typeDefs = gql`
     ): ProductsWithPagination!
     getProduct(identifier: String!): ProductResponse
     getRelatedProducts(productId: Int!, limit: Int = 4): [Product!]!
-    
+    #ADDRESS
+  getAddresses: [Address!]!
+  getAddressById(id: Int!): Address
+  getAddressesByUser(userId: Int!): [Address!]!
   }
   
   # MUTATIONS
@@ -205,9 +238,15 @@ export const typeDefs = gql`
     createUser(data: CreateUserInput!): User
     updateUser(data: UpdateUserInput!): User
 
+    # ADDRESSES
+    addAddress(input: AddressInput!): Address!
+    updateAddress(id: Int!, input: UpdateAddressInput!): Address!
+    deleteAddress(id: Int!): Boolean!
+
     #CATEGORIAS
     createCategory(data: CreateCategoryInput!): Category!
     updateCategory(data: UpdateCategoryInput!): Category!
     deleteCategory(id: Int!): Boolean! 
+
   }
 `;
