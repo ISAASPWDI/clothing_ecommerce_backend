@@ -106,8 +106,34 @@ interface GetAddressByIdArgs {
   id: number;
 }
 interface GetAddressesByUserArgs {
-    userId: number;
+    userId: string;
 }
+// Mercado Pago
+interface ObtenerPagoArgs {
+  paymentId: string;
+}
+
+interface MercadoPagoPayment {
+  id: number;
+  status: string;
+  status_detail: string;
+  external_reference: string;
+  transaction_amount: number;
+  transaction_amount_refunded: number;
+  currency_id: string;
+  date_created: string;
+  date_approved: string | null;
+  date_last_updated: string;
+  description: string;
+  installments: number;
+  payment_method_id: string;
+  payment_type_id: string;
+  payer: any;
+  card: any;
+  transaction_details: any;
+  additional_info: any;
+}
+
 export const queries = {
   //USER
   findUserByEmail: async (_: unknown, args: LoginOptions) => {
@@ -226,4 +252,122 @@ export const queries = {
       });
     }
   },
+
+  //MERCADO PAGO
+  obtenerPago: async (_: unknown, args: ObtenerPagoArgs) => {
+      try {
+        const { paymentId } = args;
+
+        // Validar que existe el ACCESS_TOKEN
+        if (!process.env.MERCADOPAGO_ACCESS_TOKEN) {
+          throw new GraphQLError('MERCADOPAGO_ACCESS_TOKEN no configurado', {
+            extensions: { code: 'INTERNAL_SERVER_ERROR' }
+          });
+        }
+
+        console.log(`🔍 Consultando pago de MercadoPago: ${paymentId}`);
+
+        // Llamar a la API de MercadoPago
+        const response = await fetch(
+          `https://api.mercadopago.com/v1/payments/${paymentId}`,
+          {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${process.env.MERCADOPAGO_ACCESS_TOKEN}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            throw new GraphQLError('Pago no encontrado en MercadoPago', {
+              extensions: { code: 'NOT_FOUND' }
+            });
+          }
+
+          throw new GraphQLError(
+            `Error al consultar MercadoPago: ${response.statusText}`,
+            {
+              extensions: { 
+                code: 'MERCADOPAGO_ERROR',
+                status: response.status 
+              }
+            }
+          );
+        }
+
+        const payment: MercadoPagoPayment = await response.json();
+
+        console.log('💳 Pago obtenido:', {
+          id: payment.id,
+          status: payment.status,
+          amount: payment.transaction_amount,
+          external_reference: payment.external_reference
+        });
+
+        // Retornar el pago con la estructura de GraphQL
+        return {
+          id: payment.id.toString(),
+          status: payment.status,
+          status_detail: payment.status_detail,
+          external_reference: payment.external_reference,
+          transaction_amount: payment.transaction_amount,
+          transaction_amount_refunded: payment.transaction_amount_refunded,
+          currency_id: payment.currency_id,
+          date_created: payment.date_created,
+          date_approved: payment.date_approved,
+          date_last_updated: payment.date_last_updated,
+          description: payment.description,
+          installments: payment.installments,
+          payment_method_id: payment.payment_method_id,
+          payment_type_id: payment.payment_type_id,
+          payer: payment.payer ? {
+            email: payment.payer.email,
+            first_name: payment.payer.first_name,
+            last_name: payment.payer.last_name,
+            id: payment.payer.id,
+            identification: payment.payer.identification ? {
+              type: payment.payer.identification.type,
+              number: payment.payer.identification.number
+            } : null
+          } : null,
+          card: payment.card ? {
+            first_six_digits: payment.card.first_six_digits,
+            last_four_digits: payment.card.last_four_digits,
+            expiration_month: payment.card.expiration_month,
+            expiration_year: payment.card.expiration_year,
+            cardholder: payment.card.cardholder ? {
+              name: payment.card.cardholder.name,
+              identification: payment.card.cardholder.identification ? {
+                type: payment.card.cardholder.identification.type,
+                number: payment.card.cardholder.identification.number
+              } : null
+            } : null
+          } : null,
+          transaction_details: payment.transaction_details ? {
+            net_received_amount: payment.transaction_details.net_received_amount,
+            total_paid_amount: payment.transaction_details.total_paid_amount,
+            installment_amount: payment.transaction_details.installment_amount,
+            overpaid_amount: payment.transaction_details.overpaid_amount
+          } : null,
+          additional_info: payment.additional_info ? {
+            ip_address: payment.additional_info.ip_address,
+            items: payment.additional_info.items,
+            payer: payment.additional_info.payer
+          } : null
+        };
+
+      } catch (error: any) {
+        console.error('❌ Error en obtenerPago:', error);
+        
+        if (error instanceof GraphQLError) {
+          throw error;
+        }
+
+        throw new GraphQLError('Error al obtener el pago de MercadoPago', {
+          extensions: { code: 'INTERNAL_SERVER_ERROR' }
+        });
+      }
+    }
 };

@@ -1,5 +1,6 @@
+// graphql/context.ts
 import { JwtService } from "../jwt/jwt.service";
-import { ExpressContext } from "apollo-server-express";
+import { Request } from "express";
 
 export interface GraphQLContext {
   user?: {
@@ -15,13 +16,14 @@ export interface GraphQLContext {
   } | null;
 }
 
-export const createContext = async ({ req }: ExpressContext): Promise<GraphQLContext> => {
+// ✅ Apollo Server 5.x: Recibe Request de Express directamente
+export const createContext = async (req: Request): Promise<GraphQLContext> => {
   const authHeader = req.headers.authorization || "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : null;
 
   if (!token) {
     // No hay token: consulta pública
-    return { user: null }; // Token inválido: contexto sin usuario
+    return { user: null };
   }
 
   try {

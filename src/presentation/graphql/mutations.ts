@@ -24,7 +24,8 @@ import { GetAddressByIdUseCase } from "../../application/use-cases/users/address
 import { AddressRepositoryImpl } from "../../infrastructure/repository/users/addresses/address-repository.implement";
 import { PrismaAddressDataSource } from "../../infrastructure/datasources/users/addresses/prisma-address.datasource";
 import { AddressResponseDTO } from "../../application/dtos/responses/users/addresses/address-response.dto";
-
+import { envs } from "../../config/envs";
+//ADDRESSES INTERFACES
 interface CreateUserArgs {
   data: {
     id: string;
@@ -85,6 +86,71 @@ interface UpdateAddressArgs {
 
 interface DeleteAddressArgs {
   id: number;
+}
+
+// 🛒 ITEMS
+export interface ItemsInput {
+  id: number;
+  title: string;
+  quantity: number;
+  unit_price: number;
+  description?: string;
+  category_id?: string;
+}
+
+// 👤 PAYER
+export interface PayerInput {
+  email: string;
+  name?: string;
+  surname?: string;
+  phone?: {
+    area_code?: string;
+    number?: string;
+  };
+  identification?: {
+    type?: string;
+    number?: string;
+  };
+  address?: {
+    street_name?: string;
+    street_number?: number;
+    zip_code?: string;
+  };
+}
+
+// 💳 MÉTODOS DE PAGO
+export interface PaymentMethodsInput {
+  excluded_payment_types?: { id: string }[];
+  excluded_payment_methods?: { id: string }[];
+  installments?: number;
+  default_payment_method_id?: string;
+}
+
+// 🔙 BACK URLS (success, pending, failure)
+export interface BackUrlsInput {
+  success: string;
+  pending: string;
+  failure: string;
+}
+
+// 🌐 INPUT PRINCIPAL PARA LA PREFERENCIA
+export interface PreferenciaInput {
+  items: ItemsInput[];
+  payer: PayerInput;
+  payment_methods?: PaymentMethodsInput;
+
+  back_urls?: BackUrlsInput;
+  auto_return?: "approved" | "all";
+
+  external_reference?: string;
+  statement_descriptor?: string;
+  binary_mode?: boolean;
+
+  notification_url?: string;
+
+  expires?: boolean;
+  expiration_date_from?: string;
+  expiration_date_to?: string;
 }
 
 
@@ -297,4 +363,121 @@ export const mutations = {
       });
     }
   },
+  // MERCADO PAGO
+  crearPreferenciaPago: async (_: unknown, { input }: { input: PreferenciaInput }) => {
+
+    // Validación temprana
+    const isAutoReturnActive = input.auto_return === "approved" || input.auto_return === "all";
+
+    if (isAutoReturnActive && (!input.back_urls || !input.back_urls.success)) {
+      throw new Error(
+        "MercadoPago Error: Si auto_return es 'approved' o 'all', back_urls.success debe estar definido."
+      );
+    }
+
+    // Construir back_urls de forma segura
+    const backUrls = {
+      success: `${process.env.BASE_URL}/checkout/success`,
+      failure: `${process.env.BASE_URL}/checkout/failure`,
+      pending: `${process.env.BASE_URL}/checkout/pending`
+    };
+
+    console.log("BACK_URLS CONSTRUIDAS:", backUrls);
+
+    // Construir payload limpio según documentación oficial de MercadoPago
+    const payload: any = {
+      items: input.items.map(item => ({
+        id: String(item.id),
+        title: item.title,
+        quantity: Number(item.quantity),
+        unit_price: Number(item.unit_price),
+        currency_id: "ARS",
+        description: item.description,
+        category_id: item.category_id || 'retail'
+      })),
+      payer: {
+        name: input.payer.name,
+        surname: input.payer.surname,
+        email: input.payer.email,
+        phone: {
+          area_code: String(input.payer.phone?.area_code || ''),
+          number: String(input.payer.phone?.number || '')
+        },
+        address: {
+          street_name: input.payer.address?.street_name || '',
+          zip_code: String(input.payer.address?.zip_code || '')
+        }
+      },
+      back_urls: backUrls,
+      auto_return: "approved",
+      notification_url: "https://2b7dc7f2b937.ngrok-free.app",
+      external_reference: input.external_reference
+    };
+
+    // Agregar campos opcionales solo si están definidos
+    if (input.auto_return) {
+      payload.auto_return = input.auto_return;
+    }
+
+    if (input.statement_descriptor) {
+      payload.statement_descriptor = input.statement_descriptor;
+    }
+
+    if (input.payment_methods) {
+      payload.payment_methods = input.payment_methods;
+    }
+
+    if (input.binary_mode !== undefined) {
+      payload.binary_mode = input.binary_mode;
+    }
+
+    if (input.expires) {
+      payload.expires = true;
+      payload.expiration_date_from = input.expiration_date_from;
+      payload.expiration_date_to = input.expiration_date_to;
+    }
+
+    console.log("PAYLOAD FINAL:", JSON.stringify(payload, null, 2));
+
+    try {
+      const response = await fetch('https://api.mercadopago.com/checkout/preferences', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${envs.MERCADOPAGO_ACCESS_TOKEN}`,
+          'X-Idempotency-Key': `${Date.now()}-${Math.random()}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const preferencia = await response.json();
+
+      console.log("RESPUESTA MERCADOPAGO STATUS:", response.status);
+      console.log("RESPUESTA MERCADOPAGO:", JSON.stringify(preferencia, null, 2));
+
+      if (!response.ok || preferencia.error) {
+        console.error("ERROR MERCADOPAGO COMPLETO:", {
+          status: response.status,
+          headers: Object.fromEntries(response.headers.entries()),
+          body: preferencia
+        });
+        throw new Error(
+          `MercadoPago Error (${response.status}): ${preferencia.message || JSON.stringify(preferencia)}`
+        );
+      }
+
+
+      return {
+        id: preferencia.id,
+        initPoint: preferencia.init_point,
+        sandboxInitPoint: preferencia.sandbox_init_point || null,
+        backUrls: preferencia.back_urls,
+        autoReturn: preferencia.auto_return || null
+      };
+
+    } catch (error) {
+      console.error("ERROR EN PETICIÓN:", error);
+      throw error;
+    }
+  }
 }

@@ -1,10 +1,14 @@
-import { ApolloServer } from 'apollo-server';
+// graphql/index.ts
+import { ApolloServer } from '@apollo/server';
 import { typeDefs } from './typeDefs';
 import { resolvers } from './resolvers';
-import { createContext } from './context';
 
-export const graphqlServer = new ApolloServer({
+export interface GraphQLContext {
+  token?: string;
+  user?: any;
+}
+
+export const graphqlServer = new ApolloServer<GraphQLContext>({
   typeDefs,
   resolvers,
-  context: createContext,
 });

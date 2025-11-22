@@ -1,6 +1,6 @@
-import { gql } from "apollo-server";
 
-export const typeDefs = gql`
+
+export const typeDefs = `
   # DEFINICIÓN DE TIPOS
   enum AuthType {
     MANUAL
@@ -195,7 +195,170 @@ input AddressInput {
     details: [Detail]
     images: [Image]
   }
+  # INPUTS DE MERCADO PAGO
+  input ItemInput {
+    id: String
+    title: String!
+    quantity: Int!
+    unit_price: Float!
+    description: String
+    category_id: String
+    currency_id: String
+  }
+  input PayerPhoneInput {
+    area_code: String
+    number: String
+  }
 
+  input PayerIdentificationInput {
+    type: String
+    number: String
+  }
+
+  input PayerAddressInput {
+    street_name: String
+    street_number: Int
+    zip_code: String
+  }
+
+  input PayerInput {
+    email: String!
+    name: String
+    surname: String
+    phone: PayerPhoneInput
+    identification: PayerIdentificationInput
+    address: PayerAddressInput
+  }
+
+  input PaymentMethodsInput {
+    excluded_payment_types: [String]
+    excluded_payment_methods: [String]
+    installments: Int
+    default_payment_method_id: String
+  }
+
+  input BackUrlsInput {
+    success: String!
+    failure: String!
+    pending: String!
+  }
+
+  input PreferenciaInput {
+    items: [ItemInput!]!
+    payer: PayerInput
+    payment_methods: PaymentMethodsInput
+    back_urls: BackUrlsInput!
+    auto_return: String
+    external_reference: String
+    statement_descriptor: String
+    binary_mode: Boolean
+    notification_url: String
+    expires: Boolean
+    expiration_date_from: String
+    expiration_date_to: String
+  }
+
+  # Response types
+  type BackUrls {
+    success: String!
+    failure: String!
+    pending: String!
+  }
+
+  type PreferenciaResponse {
+    id: String!
+    initPoint: String!
+    sandboxInitPoint: String
+    autoReturn: String
+    backUrls: BackUrls
+  }
+    type Payment {
+    id: ID!
+    status: String!
+    status_detail: String
+    external_reference: String
+    transaction_amount: Float!
+    transaction_amount_refunded: Float
+    currency_id: String!
+    date_created: String!
+    date_approved: String
+    date_last_updated: String!
+    description: String
+    installments: Int
+    payment_method_id: String
+    payment_type_id: String
+    payer: PaymentPayer
+    card: PaymentCard
+    transaction_details: TransactionDetails
+    additional_info: AdditionalInfo
+  }
+
+  type PaymentPayer {
+    email: String
+    first_name: String
+    last_name: String
+    id: String
+    identification: Identification
+  }
+
+  type Identification {
+    type: String
+    number: String
+  }
+
+  type PaymentCard {
+    first_six_digits: String
+    last_four_digits: String
+    expiration_month: Int
+    expiration_year: Int
+    cardholder: CardHolder
+  }
+
+  type CardHolder {
+    name: String
+    identification: Identification
+  }
+
+  type TransactionDetails {
+    net_received_amount: Float
+    total_paid_amount: Float
+    installment_amount: Float
+    overpaid_amount: Float
+  }
+
+  type AdditionalInfo {
+    ip_address: String
+    items: [PaymentItem]
+    payer: AdditionalInfoPayer
+  }
+
+  type PaymentItem {
+    id: String
+    title: String
+    description: String
+    picture_url: String
+    category_id: String
+    quantity: String
+    unit_price: String
+  }
+
+  type AdditionalInfoPayer {
+    first_name: String
+    last_name: String
+    phone: Phone
+    address: AddressMercadoPago
+  }
+
+  type Phone {
+    area_code: String
+    number: String
+  }
+
+  type AddressMercadoPago {
+    street_name: String
+    street_number: String
+    zip_code: String
+  }
   # QUERIES
   type Query {
     # USUARIOS
@@ -230,6 +393,8 @@ input AddressInput {
   getAddresses: [Address!]!
   getAddressById(id: Int!): Address
   getAddressesByUser(userId: Int!): [Address!]!
+      # MERCADO PAGO
+    obtenerPago(paymentId: ID!): Payment
   }
   
   # MUTATIONS
@@ -247,6 +412,9 @@ input AddressInput {
     createCategory(data: CreateCategoryInput!): Category!
     updateCategory(data: UpdateCategoryInput!): Category!
     deleteCategory(id: Int!): Boolean! 
+
+    # MERCADO PAGO
+    crearPreferenciaPago(input: PreferenciaInput!): PreferenciaResponse!
 
   }
 `;

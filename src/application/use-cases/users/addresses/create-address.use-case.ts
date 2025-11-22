@@ -12,7 +12,7 @@ export class CreateAddressUseCase implements AddressUseCase {
 
     async execute(address: Address): Promise<Address> {
         // Validaciones básicas
-        if (!address.userId || address.userId <= 0) {
+        if (!address.userId) {
             throw new Error("El ID de usuario es requerido");
         }
         if (!address.firstName.trim()) {

@@ -4,5 +4,5 @@ import { ApiWithGraphQL } from "./presentation/serverGraphQL";
     main();
 })();
 async function main(){
-    ApiWithGraphQL.createServer();
+    ApiWithGraphQL
 }

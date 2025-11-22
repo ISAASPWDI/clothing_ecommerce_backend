@@ -6,7 +6,7 @@ import { Address } from "../../../../../domain/entities/users/address.entity";
 
 export class AddressResponseDTO {
     id: number;
-    userId: number;
+    userId: string;
     firstName: string;
     lastName: string;
     address: string;
