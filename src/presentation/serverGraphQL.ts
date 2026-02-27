@@ -7,6 +7,15 @@ import { json } from 'body-parser';
 import { typeDefs } from './graphql/typeDefs';
 import { resolvers } from './graphql/resolvers';
 import { createContext, GraphQLContext } from './graphql/context';
+import { UpdateOrderStatusUseCase } from '../application/use-cases/orders/updateOrderStatus.usecase';
+import { MercadoPagoService } from '../infrastructure/services/mercadoPago.service';
+import { OrderRepositoryImpl } from '../infrastructure/repository/orders/orderRepository.impl';
+import { PrismaOrderDataSource } from '../infrastructure/datasources/orders/prisma-order.datasource';
+import { OrderStatus } from '../domain/entities/orders/order.entity';
+
+const orderDataSource = new PrismaOrderDataSource();
+const orderRepository = new OrderRepositoryImpl(orderDataSource);
+const updateOrderStatusUseCase = new UpdateOrderStatusUseCase(orderRepository);
 
 export class ApiWithGraphQL {
   private app: express.Application;
@@ -16,15 +25,79 @@ export class ApiWithGraphQL {
   constructor() {
     this.app = express();
     this.httpServer = http.createServer(this.app);
-    
+
     this.apolloServer = new ApolloServer<GraphQLContext>({
       typeDefs,
       resolvers,
-      introspection: true, 
+      introspection: true,
       includeStacktraceInErrorResponses: process.env.NODE_ENV !== 'production',
     });
   }
+  private setupPaymentRedirect(): void {
+  this.app.get('/api/payment-redirect', async (req: Request, res: Response) => {
+    try {
+      const { 
+        status, 
+        external_reference, 
+        collection_id, 
+        payment_id,
+        collection_status,
+        payment_type,
+        merchant_order_id,
+        preference_id
+      } = req.query;
 
+      console.log('🔄 Redirección de pago recibida:', { 
+        status, 
+        external_reference, 
+        payment_id,
+        collection_status 
+      });
+
+      // ✅ Mapear el status de MercadoPago a tus rutas de Next.js
+      let redirectPath = '/checkout/error'; // Default
+      
+      if (status === 'approved' || collection_status === 'approved') {
+        redirectPath = '/checkout/success';
+      } else if (status === 'pending' || collection_status === 'pending') {
+        redirectPath = '/checkout/pending';
+      } else if (status === 'failure' || status === 'rejected' || collection_status === 'rejected') {
+        redirectPath = '/checkout/failure';
+      } else {
+        redirectPath = '/checkout/failure';
+      }
+
+      // Construir URL del frontend
+      const frontendUrl = new URL(
+        redirectPath,
+        process.env.FRONTEND_URL || 'http://localhost:3000'
+      );
+      
+      // Agregar parámetros a la URL
+      if (external_reference) {
+        frontendUrl.searchParams.set('external_reference', external_reference as string);
+      }
+      if (payment_id) {
+        frontendUrl.searchParams.set('payment_id', payment_id as string);
+      }
+      if (collection_status) {
+        frontendUrl.searchParams.set('collection_status', collection_status as string);
+      }
+      if (merchant_order_id) {
+        frontendUrl.searchParams.set('merchant_order_id', merchant_order_id as string);
+      }
+
+      console.log('➡️  Redirigiendo a:', frontendUrl.toString());
+
+      res.redirect(frontendUrl.toString());
+      
+    } catch (error) {
+      console.error('❌ Error en redirección de pago:', error);
+      const errorUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      res.redirect(`${errorUrl}/checkout/error`);
+    }
+  });
+}
   private setupMiddlewares(): void {
 
     this.app.use(cors({
@@ -33,7 +106,7 @@ export class ApiWithGraphQL {
       methods: ['GET', 'POST', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'apollo-require-preflight'],
     }));
-    
+
     this.app.use(json());
   }
 
@@ -42,7 +115,7 @@ export class ApiWithGraphQL {
     this.app.post('/webhooks/mercadopago', async (req: Request, res: Response) => {
       try {
         const { type, data, action } = req.body;
-        
+
         console.log('📬 Webhook MercadoPago recibido:', { type, action, data });
 
         if (type === 'payment' || action === 'payment.created' || action === 'payment.updated') {
@@ -128,11 +201,11 @@ export class ApiWithGraphQL {
         }
       } catch (error) {
         console.error('Error en GraphQL:', error);
-        res.status(500).json({ 
-          errors: [{ 
+        res.status(500).json({
+          errors: [{
             message: 'Internal server error',
             extensions: { code: 'INTERNAL_SERVER_ERROR' }
-          }] 
+          }]
         });
       }
     });
@@ -141,7 +214,7 @@ export class ApiWithGraphQL {
     this.app.get('/graphql', async (req: Request, res: Response) => {
       // Apollo Sandbox envía la query como parámetro
       const query = req.query.query as string;
-      
+
       if (!query) {
         return res.send(`
           <!DOCTYPE html>
@@ -171,7 +244,7 @@ export class ApiWithGraphQL {
       try {
         // Manejar introspection query de Apollo Sandbox
         const contextValue = await createContext(req);
-        
+
         const result = await this.apolloServer.executeOperation(
           {
             query,
@@ -190,24 +263,80 @@ export class ApiWithGraphQL {
         }
       } catch (error) {
         console.error('Error en GraphQL GET:', error);
-        res.status(500).json({ 
-          errors: [{ message: 'Internal server error' }] 
+        res.status(500).json({
+          errors: [{ message: 'Internal server error' }]
         });
       }
     });
   }
 
   private async procesarPagoAprobado(payment: any): Promise<void> {
-    console.log('✅ Pago aprobado:', payment.id);
-    // Tu lógica aquí
+    console.log('✅ Procesando pago aprobado:', payment.id);
+
+    const externalReference = payment.external_reference;
+
+    if (!externalReference) {
+      console.error('❌ No se encontró external_reference en el pago');
+      return;
+    }
+    console.log('💳 Estado del pago:', {
+      id: payment.id,
+      status: payment.status,
+      externalReference: payment.external_reference
+    });
+
+
+    try {
+      await updateOrderStatusUseCase.execute(
+        externalReference,
+        OrderStatus.PAID,
+        payment.id.toString()
+      );
+    } catch (error) {
+      console.error('❌ Error actualizando orden:', error);
+    }
   }
 
   private async procesarPagoRechazado(payment: any): Promise<void> {
-    console.log('❌ Pago rechazado:', payment.id);
+    console.log('❌ Procesando pago rechazado:', payment.id);
+
+    const externalReference = payment.external_reference;
+    if (!externalReference) return;
+    console.log('💳 Estado del pago:', {
+      id: payment.id,
+      status: payment.status,
+      externalReference: payment.external_reference
+    });
+    try {
+      await updateOrderStatusUseCase.execute(
+        externalReference,
+        OrderStatus.REJECTED,
+        payment.id.toString()
+      );
+    } catch (error) {
+      console.error('❌ Error actualizando orden rechazada:', error);
+    }
   }
 
   private async procesarPagoPendiente(payment: any): Promise<void> {
-    console.log('⏳ Pago pendiente:', payment.id);
+    console.log('⏳ Procesando pago pendiente:', payment.id);
+
+    const externalReference = payment.external_reference;
+    if (!externalReference) return;
+    console.log('💳 Estado del pago:', {
+      id: payment.id,
+      status: payment.status,
+      externalReference: payment.external_reference
+    });
+    try {
+      await updateOrderStatusUseCase.execute(
+        externalReference,
+        OrderStatus.PENDING,
+        payment.id.toString()
+      );
+    } catch (error) {
+      console.error('❌ Error actualizando orden pendiente:', error);
+    }
   }
 
   public async createServer(): Promise<void> {
@@ -220,6 +349,7 @@ export class ApiWithGraphQL {
     // Configurar webhooks
     this.setupWebhooks();
 
+    this.setupPaymentRedirect();
     // Configurar GraphQL
     this.setupGraphQL();
 

@@ -1,5 +1,3 @@
-
-
 export const typeDefs = `
   # DEFINICIÓN DE TIPOS
   enum AuthType {
@@ -20,6 +18,16 @@ export const typeDefs = `
     image
   }
 
+  # ✨ NUEVO ENUM PARA ORDERS
+  enum OrderStatus {
+    Procesando
+    Enviado
+    Entregado
+    PENDING
+    PAID
+    REJECTED
+    CANCELLED
+  }
 
   # TIPOS DEL SISTEMA
   type User {
@@ -91,17 +99,66 @@ export const typeDefs = `
     products: [Product!]!
     isProducts: Boolean!
   }
-type Address {
-  id: Int!
-  userId: String!
-  firstName: String!
-  lastName: String!
-  address: String!
-  optAddress: String
-  city: String!
-  zipCode: String!
-  phone: String!
-}
+  type Address {
+    id: Int!
+    userId: String!
+    firstName: String!
+    lastName: String!
+    address: String!
+    optAddress: String
+    city: String!
+    zipCode: String!
+    phone: String!
+  }
+
+  # ✨ NUEVOS TIPOS PARA ORDERS
+  type Order {
+    id: ID!
+    externalReference: String
+    userId: String!
+    paymentMethodId: Int!
+    status: OrderStatus!
+    total: Float!
+    orderItems: [OrderItem!]!
+    customerInfo: CustomerInfo
+    mercadoPagoPaymentId: String
+    mercadoPagoPreferenceId: String
+    createdAt: String!
+    paidAt: String
+  }
+
+  type OrderItem {
+    id: ID!
+    orderId: Int!
+    productId: Int!
+    name: String!
+    quantity: Int!
+    price: Float!
+    selectedColor: String
+    selectedSize: String
+  }
+
+  type CustomerInfo {
+    id: ID!
+    firstName: String!
+    lastName: String!
+    email: String!
+    phone: String!
+    address: String!
+    apartment: String
+    city: String
+    province: String
+    zipCode: String!
+    createdAt: String!
+  }
+
+  type PaymentMethod {
+    id: ID!
+    name: String!
+    description: String
+    code: String
+    settings: String
+  }
 
   # INPUTS DE USUARIOS
 
@@ -131,26 +188,26 @@ type Address {
     image: String
   }
   #INPUTS DE ADDRESS
-input AddressInput {
-  userId: String!
-  firstName: String!
-  lastName: String!
-  address: String!
-  optAddress: String
-  city: String!
-  zipCode: String!
-  phone: String!
-}
+  input AddressInput {
+    userId: String!
+    firstName: String!
+    lastName: String!
+    address: String!
+    optAddress: String
+    city: String!
+    zipCode: String!
+    phone: String!
+  }
   input UpdateAddressInput {
     userId: String!
-  firstName: String!
-  lastName: String!
-  address: String!
-  optAddress: String
-  city: String!
-  zipCode: String!
-  phone: String!
-}
+    firstName: String!
+    lastName: String!
+    address: String!
+    optAddress: String
+    city: String!
+    zipCode: String!
+    phone: String!
+  }
   #INPUTS DE CATEGORIAS
 
   input CreateCategoryInput {
@@ -195,6 +252,36 @@ input AddressInput {
     details: [Detail]
     images: [Image]
   }
+
+  # ✨ NUEVOS INPUTS PARA ORDERS
+  input CreateOrderInput {
+    items: [OrderItemInput!]!
+    customerInfo: CustomerInfoInput!
+    total: Float!
+    paymentMethodId: Int!
+  }
+
+  input OrderItemInput {
+    productId: Int!
+    name: String!
+    quantity: Int!
+    price: Float!
+    selectedColor: String
+    selectedSize: String
+  }
+
+  input CustomerInfoInput {
+    firstName: String!
+    lastName: String!
+    email: String!
+    phone: String!
+    address: String!
+    apartment: String
+    city: String
+    province: String
+    zipCode: String!
+  }
+
   # INPUTS DE MERCADO PAGO
   input ItemInput {
     id: String
@@ -272,7 +359,7 @@ input AddressInput {
     autoReturn: String
     backUrls: BackUrls
   }
-    type Payment {
+  type Payment {
     id: ID!
     status: String!
     status_detail: String
@@ -359,6 +446,48 @@ input AddressInput {
     street_number: String
     zip_code: String
   }
+
+  # NUEVAS TYPES PARA ORDENES
+
+  type PaginationInfo {
+  currentPage: Int!
+  totalPages: Int!
+  totalOrders: Int!
+  hasNextPage: Boolean!
+  hasPrevPage: Boolean!
+}
+
+type PaginatedOrders {
+  orders: [Order!]!
+  pagination: PaginationInfo!
+}
+  type OrderDetail {
+  id: ID!
+  externalReference: String
+  userId: String!
+  status: OrderStatus!
+  total: Float!
+  
+  # Información de items
+  orderItems: [OrderItem!]!
+  
+  # Información del cliente/dirección de envío
+  customerInfo: CustomerInfo
+  
+  # Información de pago
+  paymentMethod: PaymentMethod!
+  mercadoPagoPaymentId: String
+  mercadoPagoPreferenceId: String
+  
+  # Fechas
+  createdAt: String!
+  paidAt: String
+  
+  # Resumen de la orden
+  subtotal: Float!
+  itemsCount: Int!
+}
+  
   # QUERIES
   type Query {
     # USUARIOS
@@ -390,11 +519,22 @@ input AddressInput {
     getProduct(identifier: String!): ProductResponse
     getRelatedProducts(productId: Int!, limit: Int = 4): [Product!]!
     #ADDRESS
-  getAddresses: [Address!]!
-  getAddressById(id: Int!): Address
-  getAddressesByUser(userId: Int!): [Address!]!
-      # MERCADO PAGO
+    getAddresses: [Address!]!
+    getAddressById(id: Int!): Address
+    getAddressesByUser(userId: Int!): [Address!]!
+    # MERCADO PAGO
     obtenerPago(paymentId: ID!): Payment
+
+    # ✨ NUEVAS QUERIES PARA ORDERS
+    orderById(id: Int!): Order
+    orderByReference(reference: String!): Order
+    myOrders: [Order!]!
+    paymentMethods: [PaymentMethod!]!
+
+      allOrders(page: Int = 1, limit: Int = 10): PaginatedOrders!
+  myOrdersPaginated(page: Int = 1, limit: Int = 10): PaginatedOrders!
+  myOrderDetail(externalReference: String!): OrderDetail
+  orderDetail(externalReference: String!): OrderDetail
   }
   
   # MUTATIONS
@@ -416,5 +556,12 @@ input AddressInput {
     # MERCADO PAGO
     crearPreferenciaPago(input: PreferenciaInput!): PreferenciaResponse!
 
+    # ✨ NUEVAS MUTATIONS PARA ORDERS
+    crearOrdenYPreferencia(input: CreateOrderInput!): PreferenciaResponse!
+    actualizarEstadoOrden(
+      externalReference: String!
+      status: OrderStatus!
+      mercadoPagoPaymentId: String
+    ): Order!
   }
 `;

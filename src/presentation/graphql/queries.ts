@@ -1,5 +1,4 @@
 import { GraphQLError } from "graphql";
-import { CategoryResponseDTO } from "../../application/dtos/responses/categories/CategoryResponseDTO";
 import { AddressResponseDTO } from "../../application/dtos/responses/users/addresses/address-response.dto";
 import { AuthenticateUser } from "../../application/use-cases/auth/authenticate-user.use-case";
 import { GetAllAgesUseCase } from "../../application/use-cases/products/ages/get-all-ages.use-case";
@@ -33,6 +32,13 @@ import { ProductRepositoryImpl } from "../../infrastructure/repository/products/
 import { SizeRepositoryImpl } from "../../infrastructure/repository/products/size.repository.implement";
 import { AddressRepositoryImpl } from "../../infrastructure/repository/users/addresses/address-repository.implement";
 import { UserRepositoryImpl } from "../../infrastructure/repository/users/user.repository.implement";
+import { GetOrdersPaginatedUseCase } from "../../application/use-cases/orders/get-orders-paginated.use-case";
+import { GetUserOrdersPaginatedUseCase } from "../../application/use-cases/orders/get-user-orders-paginated.use-case";
+import { OrderRepositoryImpl } from "../../infrastructure/repository/orders/orderRepository.impl";
+import { PrismaOrderDataSource } from "../../infrastructure/datasources/orders/prisma-order.datasource";
+import { GetOrderDetailUseCase } from "../../application/use-cases/orders/get-order-detail.use-case";
+import { GetMyOrderDetailUseCase } from "../../application/use-cases/orders/get-my-order-detail.use-case";
+import { OrderDetailResponseDTO } from "../../application/dtos/orders/orderDetail.response.dto";
 
 
 const prismaUserRepository = new UserRepositoryImpl(
@@ -61,6 +67,10 @@ const prismaProductRepository = new ProductRepositoryImpl(
 const addressRepository = new AddressRepositoryImpl(
   new PrismaAddressDataSource()
 )
+const orderRepository = new OrderRepositoryImpl(
+  new PrismaOrderDataSource()
+)
+
 const bcryptAdapter = new BcryptAdapter();
 const loginUser = new LoginUser(prismaUserRepository, bcryptAdapter);
 const authenticateUser = new AuthenticateUser(loginUser);
@@ -77,6 +87,14 @@ const getRelatedProductsUseCase = new GetRelatedProductsUseCase(prismaProductRep
 
 const getAddressesUseCase = new GetAddressesUseCase(addressRepository);
 const getAddressByIdUseCase = new GetAddressByIdUseCase(addressRepository);
+
+// ORDENES
+
+const getOrdersPaginatedUseCase = new GetOrdersPaginatedUseCase(orderRepository);
+const getUserOrdersPaginatedUseCase = new GetUserOrdersPaginatedUseCase(orderRepository);
+const getOrderDetailUseCase = new GetOrderDetailUseCase(orderRepository);
+const getMyOrderDetailUseCase = new GetMyOrderDetailUseCase(orderRepository);
+
 
 interface LoginOptions {
   email: string;
@@ -106,32 +124,7 @@ interface GetAddressByIdArgs {
   id: number;
 }
 interface GetAddressesByUserArgs {
-    userId: string;
-}
-// Mercado Pago
-interface ObtenerPagoArgs {
-  paymentId: string;
-}
-
-interface MercadoPagoPayment {
-  id: number;
-  status: string;
-  status_detail: string;
-  external_reference: string;
-  transaction_amount: number;
-  transaction_amount_refunded: number;
-  currency_id: string;
-  date_created: string;
-  date_approved: string | null;
-  date_last_updated: string;
-  description: string;
-  installments: number;
-  payment_method_id: string;
-  payment_type_id: string;
-  payer: any;
-  card: any;
-  transaction_details: any;
-  additional_info: any;
+  userId: string;
 }
 
 export const queries = {
@@ -216,21 +209,21 @@ export const queries = {
       });
     }
   },
-          getAddressesByUser: async (_: unknown, args: GetAddressesByUserArgs) => {
-            try {
-                const addresses = await getAddressesUseCase.execute();
-                if (!addresses) return [];
-                
-                // Filtrar por userId
-                const userAddresses = addresses.filter(address => address.userId === args.userId);
-                return userAddresses.map(address => new AddressResponseDTO(address));
-            } catch (error: any) {
-                console.error("Error en getAddressesByUser:", error);
-                throw new GraphQLError("Error al obtener las direcciones del usuario.", {
-                    extensions: { code: "INTERNAL_SERVER_ERROR" },
-                });
-            }
-        },
+  getAddressesByUser: async (_: unknown, args: GetAddressesByUserArgs) => {
+    try {
+      const addresses = await getAddressesUseCase.execute();
+      if (!addresses) return [];
+
+      // Filtrar por userId
+      const userAddresses = addresses.filter(address => address.userId === args.userId);
+      return userAddresses.map(address => new AddressResponseDTO(address));
+    } catch (error: any) {
+      console.error("Error en getAddressesByUser:", error);
+      throw new GraphQLError("Error al obtener las direcciones del usuario.", {
+        extensions: { code: "INTERNAL_SERVER_ERROR" },
+      });
+    }
+  },
 
   // Obtener dirección por ID
   getAddressById: async (_: unknown, args: GetAddressByIdArgs) => {
@@ -252,122 +245,176 @@ export const queries = {
       });
     }
   },
+  allOrders: async (_: any, { page, limit }: { page: number; limit: number }, context: any) => {
+    try {
+      return await getOrdersPaginatedUseCase.execute(page, limit);
+    } catch (error: any) {
+      console.error("Error en allOrders:", error);
+      throw new GraphQLError(error.message || "Error al obtener las órdenes paginadas.", {
+        extensions: { code: "INTERNAL_SERVER_ERROR" },
+      });
+    }
+  },
 
-  //MERCADO PAGO
-  obtenerPago: async (_: unknown, args: ObtenerPagoArgs) => {
-      try {
-        const { paymentId } = args;
-
-        // Validar que existe el ACCESS_TOKEN
-        if (!process.env.MERCADOPAGO_ACCESS_TOKEN) {
-          throw new GraphQLError('MERCADOPAGO_ACCESS_TOKEN no configurado', {
-            extensions: { code: 'INTERNAL_SERVER_ERROR' }
-          });
-        }
-
-        console.log(`🔍 Consultando pago de MercadoPago: ${paymentId}`);
-
-        // Llamar a la API de MercadoPago
-        const response = await fetch(
-          `https://api.mercadopago.com/v1/payments/${paymentId}`,
-          {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${process.env.MERCADOPAGO_ACCESS_TOKEN}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-
-        if (!response.ok) {
-          if (response.status === 404) {
-            throw new GraphQLError('Pago no encontrado en MercadoPago', {
-              extensions: { code: 'NOT_FOUND' }
-            });
-          }
-
-          throw new GraphQLError(
-            `Error al consultar MercadoPago: ${response.statusText}`,
-            {
-              extensions: { 
-                code: 'MERCADOPAGO_ERROR',
-                status: response.status 
-              }
-            }
-          );
-        }
-
-        const payment: MercadoPagoPayment = await response.json();
-
-        console.log('💳 Pago obtenido:', {
-          id: payment.id,
-          status: payment.status,
-          amount: payment.transaction_amount,
-          external_reference: payment.external_reference
-        });
-
-        // Retornar el pago con la estructura de GraphQL
-        return {
-          id: payment.id.toString(),
-          status: payment.status,
-          status_detail: payment.status_detail,
-          external_reference: payment.external_reference,
-          transaction_amount: payment.transaction_amount,
-          transaction_amount_refunded: payment.transaction_amount_refunded,
-          currency_id: payment.currency_id,
-          date_created: payment.date_created,
-          date_approved: payment.date_approved,
-          date_last_updated: payment.date_last_updated,
-          description: payment.description,
-          installments: payment.installments,
-          payment_method_id: payment.payment_method_id,
-          payment_type_id: payment.payment_type_id,
-          payer: payment.payer ? {
-            email: payment.payer.email,
-            first_name: payment.payer.first_name,
-            last_name: payment.payer.last_name,
-            id: payment.payer.id,
-            identification: payment.payer.identification ? {
-              type: payment.payer.identification.type,
-              number: payment.payer.identification.number
-            } : null
-          } : null,
-          card: payment.card ? {
-            first_six_digits: payment.card.first_six_digits,
-            last_four_digits: payment.card.last_four_digits,
-            expiration_month: payment.card.expiration_month,
-            expiration_year: payment.card.expiration_year,
-            cardholder: payment.card.cardholder ? {
-              name: payment.card.cardholder.name,
-              identification: payment.card.cardholder.identification ? {
-                type: payment.card.cardholder.identification.type,
-                number: payment.card.cardholder.identification.number
-              } : null
-            } : null
-          } : null,
-          transaction_details: payment.transaction_details ? {
-            net_received_amount: payment.transaction_details.net_received_amount,
-            total_paid_amount: payment.transaction_details.total_paid_amount,
-            installment_amount: payment.transaction_details.installment_amount,
-            overpaid_amount: payment.transaction_details.overpaid_amount
-          } : null,
-          additional_info: payment.additional_info ? {
-            ip_address: payment.additional_info.ip_address,
-            items: payment.additional_info.items,
-            payer: payment.additional_info.payer
-          } : null
-        };
-
-      } catch (error: any) {
-        console.error('❌ Error en obtenerPago:', error);
-        
-        if (error instanceof GraphQLError) {
-          throw error;
-        }
-
-        throw new GraphQLError('Error al obtener el pago de MercadoPago', {
-          extensions: { code: 'INTERNAL_SERVER_ERROR' }
+  myOrdersPaginated: async (_: any, { page, limit }: { page: number; limit: number }, context: any) => {
+    try {
+      console.log("Este es el contexto : ",context);
+      
+      if (!context.user.userId) {
+        throw new GraphQLError("Usuario no autenticado", {
+          extensions: { code: "UNAUTHENTICATED" },
         });
       }
+
+      return await getUserOrdersPaginatedUseCase.execute(context.user.userId, page, limit);
+    } catch (error: any) {
+      console.error("Error en myOrdersPaginated:", error);
+      throw new GraphQLError(error.message || "Error al obtener tus órdenes paginadas.", {
+        extensions: { code: "INTERNAL_SERVER_ERROR" },
+      });
     }
+  },
+myOrderDetail: async (_: any, { externalReference }: { externalReference: string }, context: any) => {
+  try {
+    if (!context.user.userId) {
+      throw new GraphQLError("Usuario no autenticado", {
+        extensions: { code: "UNAUTHENTICATED" },
+      });
+    }
+
+
+    const order = await getMyOrderDetailUseCase.execute(externalReference, context.user.userId);
+    console.log("Order en myOrderDetail:", order);
+
+    if (!order) {
+      throw new GraphQLError("Orden no encontrada o no tienes acceso a ella", {
+        extensions: { code: "NOT_FOUND" },
+      });
+    }
+
+    return new OrderDetailResponseDTO(order);
+  } catch (error: any) {
+    console.error("Error en myOrderDetail:", error);
+    throw new GraphQLError(error.message || "Error al obtener el detalle de tu orden.", {
+      extensions: { code: error.extensions?.code || "INTERNAL_SERVER_ERROR" },
+    });
+  }
+},
+  // //MERCADO PAGO
+  // obtenerPago: async (_: unknown, args: ObtenerPagoArgs) => {
+  //     try {
+  //       const { paymentId } = args;
+
+  //       // Validar que existe el ACCESS_TOKEN
+  //       if (!process.env.MERCADOPAGO_ACCESS_TOKEN) {
+  //         throw new GraphQLError('MERCADOPAGO_ACCESS_TOKEN no configurado', {
+  //           extensions: { code: 'INTERNAL_SERVER_ERROR' }
+  //         });
+  //       }
+
+  //       console.log(`🔍 Consultando pago de MercadoPago: ${paymentId}`);
+
+  //       // Llamar a la API de MercadoPago
+  //       const response = await fetch(
+  //         `https://api.mercadopago.com/v1/payments/${paymentId}`,
+  //         {
+  //           method: 'GET',
+  //           headers: {
+  //             'Authorization': `Bearer ${process.env.MERCADOPAGO_ACCESS_TOKEN}`,
+  //             'Content-Type': 'application/json'
+  //           }
+  //         }
+  //       );
+
+  //       if (!response.ok) {
+  //         if (response.status === 404) {
+  //           throw new GraphQLError('Pago no encontrado en MercadoPago', {
+  //             extensions: { code: 'NOT_FOUND' }
+  //           });
+  //         }
+
+  //         throw new GraphQLError(
+  //           `Error al consultar MercadoPago: ${response.statusText}`,
+  //           {
+  //             extensions: { 
+  //               code: 'MERCADOPAGO_ERROR',
+  //               status: response.status 
+  //             }
+  //           }
+  //         );
+  //       }
+
+  //       const payment: MercadoPagoPayment = await response.json();
+
+  //       console.log('💳 Pago obtenido:', {
+  //         id: payment.id,
+  //         status: payment.status,
+  //         amount: payment.transaction_amount,
+  //         external_reference: payment.external_reference
+  //       });
+
+  //       // Retornar el pago con la estructura de GraphQL
+  //       return {
+  //         id: payment.id.toString(),
+  //         status: payment.status,
+  //         status_detail: payment.status_detail,
+  //         external_reference: payment.external_reference,
+  //         transaction_amount: payment.transaction_amount,
+  //         transaction_amount_refunded: payment.transaction_amount_refunded,
+  //         currency_id: payment.currency_id,
+  //         date_created: payment.date_created,
+  //         date_approved: payment.date_approved,
+  //         date_last_updated: payment.date_last_updated,
+  //         description: payment.description,
+  //         installments: payment.installments,
+  //         payment_method_id: payment.payment_method_id,
+  //         payment_type_id: payment.payment_type_id,
+  //         payer: payment.payer ? {
+  //           email: payment.payer.email,
+  //           first_name: payment.payer.first_name,
+  //           last_name: payment.payer.last_name,
+  //           id: payment.payer.id,
+  //           identification: payment.payer.identification ? {
+  //             type: payment.payer.identification.type,
+  //             number: payment.payer.identification.number
+  //           } : null
+  //         } : null,
+  //         card: payment.card ? {
+  //           first_six_digits: payment.card.first_six_digits,
+  //           last_four_digits: payment.card.last_four_digits,
+  //           expiration_month: payment.card.expiration_month,
+  //           expiration_year: payment.card.expiration_year,
+  //           cardholder: payment.card.cardholder ? {
+  //             name: payment.card.cardholder.name,
+  //             identification: payment.card.cardholder.identification ? {
+  //               type: payment.card.cardholder.identification.type,
+  //               number: payment.card.cardholder.identification.number
+  //             } : null
+  //           } : null
+  //         } : null,
+  //         transaction_details: payment.transaction_details ? {
+  //           net_received_amount: payment.transaction_details.net_received_amount,
+  //           total_paid_amount: payment.transaction_details.total_paid_amount,
+  //           installment_amount: payment.transaction_details.installment_amount,
+  //           overpaid_amount: payment.transaction_details.overpaid_amount
+  //         } : null,
+  //         additional_info: payment.additional_info ? {
+  //           ip_address: payment.additional_info.ip_address,
+  //           items: payment.additional_info.items,
+  //           payer: payment.additional_info.payer
+  //         } : null
+  //       };
+
+  //     } catch (error: any) {
+  //       console.error('❌ Error en obtenerPago:', error);
+
+  //       if (error instanceof GraphQLError) {
+  //         throw error;
+  //       }
+
+  //       throw new GraphQLError('Error al obtener el pago de MercadoPago', {
+  //         extensions: { code: 'INTERNAL_SERVER_ERROR' }
+  //       });
+  //     }
+  //   }
 };

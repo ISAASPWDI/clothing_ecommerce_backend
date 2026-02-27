@@ -25,6 +25,10 @@ import { AddressRepositoryImpl } from "../../infrastructure/repository/users/add
 import { PrismaAddressDataSource } from "../../infrastructure/datasources/users/addresses/prisma-address.datasource";
 import { AddressResponseDTO } from "../../application/dtos/responses/users/addresses/address-response.dto";
 import { envs } from "../../config/envs";
+import { PrismaOrderDataSource } from "../../infrastructure/datasources/orders/prisma-order.datasource";
+import { OrderRepositoryImpl } from "../../infrastructure/repository/orders/orderRepository.impl";
+import { MercadoPagoService } from "../../infrastructure/services/mercadoPago.service";
+import { CreateOrderAndPreferenceUseCase } from "../../application/use-cases/orders/createOrderAndPreference.usecase";
 //ADDRESSES INTERFACES
 interface CreateUserArgs {
   data: {
@@ -177,6 +181,63 @@ const createAddressUseCase = new CreateAddressUseCase(addressRepository);
 const updateAddressUseCase = new UpdateAddressUseCase(addressRepository);
 const deleteAddressUseCase = new DeleteAddressUseCase(addressRepository);
 const getAddressByIdUseCase = new GetAddressByIdUseCase(addressRepository);
+
+// Orders
+const orderDataSource = new PrismaOrderDataSource();
+const orderRepository = new OrderRepositoryImpl(orderDataSource);
+const mercadoPagoService = new MercadoPagoService();
+const createOrderAndPreferenceUseCase = new CreateOrderAndPreferenceUseCase(
+  orderRepository,
+  mercadoPagoService
+);
+
+function normalizeToCreateOrderInput(input: any, userId?: string) {
+  // Si ya viene en formato esperado NO hacemos nada
+  if (input.items?.[0]?.productId) {
+    return {
+      ...input,
+      userId
+    };
+  }
+
+  // Si viene en formato MercadoPago → transformarlo
+  return {
+    items: input.items.map((item: any) => {
+      const colorMatch = item.description?.match(/Color:\s*([^\s]+)/);
+      const sizeMatch = item.description?.match(/Talle:\s*([^\s]+)/);
+
+      return {
+        productId: Number(item.id),
+        name: item.title,
+        quantity: item.quantity,
+        price: item.unit_price,
+        selectedColor: colorMatch ? colorMatch[1] : undefined,
+        selectedSize: sizeMatch ? sizeMatch[1] : undefined
+      };
+    }),
+
+    customerInfo: {
+      firstName: input.payer?.name,
+      lastName: input.payer?.surname,
+      email: input.payer?.email,
+      phone: input.payer?.phone,
+      address: input.payer?.address?.street_name,
+      zipCode: input.payer?.address?.zip_code,
+      province: input.payer?.province
+    },
+
+    total: input.items.reduce(
+      (acc: number, i: any) => acc + i.unit_price * i.quantity,
+      0
+    ),
+
+    paymentMethodId: input.paymentMethodId || 1,
+    userId
+  };
+}
+
+
+
 export const mutations = {
   // USUARIOS
   createUser: async (_: unknown, args: CreateUserArgs) => {
@@ -363,121 +424,39 @@ export const mutations = {
       });
     }
   },
+
   // MERCADO PAGO
-  crearPreferenciaPago: async (_: unknown, { input }: { input: PreferenciaInput }) => {
-
-    // Validación temprana
-    const isAutoReturnActive = input.auto_return === "approved" || input.auto_return === "all";
-
-    if (isAutoReturnActive && (!input.back_urls || !input.back_urls.success)) {
-      throw new Error(
-        "MercadoPago Error: Si auto_return es 'approved' o 'all', back_urls.success debe estar definido."
-      );
-    }
-
-    // Construir back_urls de forma segura
-    const backUrls = {
-      success: `${process.env.BASE_URL}/checkout/success`,
-      failure: `${process.env.BASE_URL}/checkout/failure`,
-      pending: `${process.env.BASE_URL}/checkout/pending`
-    };
-
-    console.log("BACK_URLS CONSTRUIDAS:", backUrls);
-
-    // Construir payload limpio según documentación oficial de MercadoPago
-    const payload: any = {
-      items: input.items.map(item => ({
-        id: String(item.id),
-        title: item.title,
-        quantity: Number(item.quantity),
-        unit_price: Number(item.unit_price),
-        currency_id: "ARS",
-        description: item.description,
-        category_id: item.category_id || 'retail'
-      })),
-      payer: {
-        name: input.payer.name,
-        surname: input.payer.surname,
-        email: input.payer.email,
-        phone: {
-          area_code: String(input.payer.phone?.area_code || ''),
-          number: String(input.payer.phone?.number || '')
-        },
-        address: {
-          street_name: input.payer.address?.street_name || '',
-          zip_code: String(input.payer.address?.zip_code || '')
-        }
-      },
-      back_urls: backUrls,
-      auto_return: "approved",
-      notification_url: "https://2b7dc7f2b937.ngrok-free.app",
-      external_reference: input.external_reference
-    };
-
-    // Agregar campos opcionales solo si están definidos
-    if (input.auto_return) {
-      payload.auto_return = input.auto_return;
-    }
-
-    if (input.statement_descriptor) {
-      payload.statement_descriptor = input.statement_descriptor;
-    }
-
-    if (input.payment_methods) {
-      payload.payment_methods = input.payment_methods;
-    }
-
-    if (input.binary_mode !== undefined) {
-      payload.binary_mode = input.binary_mode;
-    }
-
-    if (input.expires) {
-      payload.expires = true;
-      payload.expiration_date_from = input.expiration_date_from;
-      payload.expiration_date_to = input.expiration_date_to;
-    }
-
-    console.log("PAYLOAD FINAL:", JSON.stringify(payload, null, 2));
-
+  crearPreferenciaPago: async (
+    _: unknown,
+    { input }: { input: any },
+    context: any
+  ) => {
     try {
-      const response = await fetch('https://api.mercadopago.com/checkout/preferences', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${envs.MERCADOPAGO_ACCESS_TOKEN}`,
-          'X-Idempotency-Key': `${Date.now()}-${Math.random()}`
-        },
-        body: JSON.stringify(payload)
-      });
+      const userId = context.user?.userId;
 
-      const preferencia = await response.json();
+      const normalizedInput = normalizeToCreateOrderInput(input, userId);
 
-      console.log("RESPUESTA MERCADOPAGO STATUS:", response.status);
-      console.log("RESPUESTA MERCADOPAGO:", JSON.stringify(preferencia, null, 2));
+      console.log("📦 Normalized Input:", normalizedInput);
 
-      if (!response.ok || preferencia.error) {
-        console.error("ERROR MERCADOPAGO COMPLETO:", {
-          status: response.status,
-          headers: Object.fromEntries(response.headers.entries()),
-          body: preferencia
+      const result = await createOrderAndPreferenceUseCase.execute(
+        normalizedInput
+      );
+
+      return result;
+
+    } catch (error: any) {
+      console.error("❌ Error en crearOrdenYPreferencia:", error);
+
+      if (error.message.includes("MercadoPago")) {
+        throw new GraphQLError("Error al procesar el pago con MercadoPago.", {
+          extensions: { code: "PAYMENT_PROVIDER_ERROR" },
         });
-        throw new Error(
-          `MercadoPago Error (${response.status}): ${preferencia.message || JSON.stringify(preferencia)}`
-        );
       }
 
-
-      return {
-        id: preferencia.id,
-        initPoint: preferencia.init_point,
-        sandboxInitPoint: preferencia.sandbox_init_point || null,
-        backUrls: preferencia.back_urls,
-        autoReturn: preferencia.auto_return || null
-      };
-
-    } catch (error) {
-      console.error("ERROR EN PETICIÓN:", error);
-      throw error;
+      throw new GraphQLError("Error interno del servidor.", {
+        extensions: { code: "INTERNAL_SERVER_ERROR" },
+      });
     }
   }
+
 }
